@@ -1,18 +1,20 @@
-from quirihttp.data import DataFactory
-from quirihttp.router import Router
+import logbook
+import sys
+import curio
+from h11 import Response
+from responds.server import Server
+from responds.router import Router
 
-r = Router(DataFactory())
+logbook.StreamHandler(sys.stdout).push_application()
 
-
-@r.route('/hey/this/is/cool')
-def cool(req, res):
-    print('It works!!!')
-
-
-@r.route('/hello/<param>')
-def hello(req, res):
-    print('We have parameters, too: param={}'.format(req.params.param))
+r = Router()
+s = Server(r)
 
 
-assert r.match('/hey/this/is/cool')
-assert r.match('/hello/yes')
+@r.route('/hello/async')
+async def handle(event, params):
+    return Response(status_code=200, headers=[]), b'Hello world!'
+
+
+kernel = curio.Kernel()
+kernel.run(curio.tcp_server('0.0.0.0', 8080, s.tcp_handle))

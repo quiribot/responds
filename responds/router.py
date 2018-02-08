@@ -34,6 +34,7 @@ def compile_pattern(url, param_pattern='([^/]*)', strict=False):
 
 class Params:
     def __init__(self, groups, params):
+        # TODO: Edge case where len(groups) > len(params) or otherwise
         self._params = dict(zip(params, groups))
 
     def __getattr__(self, attr):
@@ -43,42 +44,32 @@ class Params:
             raise AttributeError() from e
 
 
-# def build_param_dict(groups, params):
-#     TODO: Edge case where len(groups) > len(params) or otherwise
-#     return dict(zip(params, groups))
-#     out = {}
-#     params_i = len(params) - 1
-#     for i, param in enumerate(groups):
-#         if i > params_i:
-#             break
-#         out[params[i]] = param
-
-#     return out
+class Route:
+    def __init__(self, handler, methods, params):
+        self.handler = handler
+        self.methods = methods
+        self.params = params
 
 
 class Router:
-    def __init__(self, http_factory):
+    def __init__(self):
         self.routes = []
-        self.http_factory = http_factory
 
     def route(self, template, methods=None):
         if not methods:
             methods = ['GET']
 
         def wrapper(func):
-            self.routes.append(compile_pattern(template) + (func,))
+            self.routes.append(compile_pattern(template) + (func, methods))
             return func
 
         return wrapper
 
     def match(self, path, req_arg=None, res_arg=None):
-        for exp, params, handler in self.routes:
+        for exp, params, handler, methods in self.routes:
             match = exp.match(path)
             if not match:
                 continue
-            req = self.http_factory.make_request(Params(match.groups(), params), req_arg)
-            res = self.http_factory.make_response(res_arg)
-            handler(req, res)
-            return True
+            return Route(handler, methods, Params(match.groups(), params))
 
-        return False
+        return None
