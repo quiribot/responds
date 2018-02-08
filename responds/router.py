@@ -2,6 +2,9 @@ import re
 from urllib.parse import urlparse
 
 
+PARAM_TEMPLATE_PATTERN = re.compile(r'<(.+[^\\])>')
+
+
 def compile_pattern(url, param_pattern='([^/]*)', strict=False):
     if url == '/':
         return re.compile('^\\/')
@@ -15,10 +18,11 @@ def compile_pattern(url, param_pattern='([^/]*)', strict=False):
             continue
         pattern += '\\/+'
 
-        if fragment[0] == '<' and fragment[-1] == '>':
-            label = fragment[1:-1]
+        param = PARAM_TEMPLATE_PATTERN.match(fragment)
+        if param:
+            (label,) = param.groups()
             params.append(label)
-            pattern += param_pattern
+            pattern += PARAM_TEMPLATE_PATTERN.sub(param_pattern, fragment)
         else:
             pattern += fragment
 
