@@ -3,12 +3,18 @@
 # modified to suit a flask-like api
 
 from . import __version__, Response, Request
+from enum import Enum
 from itertools import count
 from socket import SHUT_WR, SO_LINGER
 from wsgiref.handlers import format_date_time
 import curio
 import h11
 import logbook
+
+
+class Environment(Enum):
+    PROD = 1
+    DEV = 2
 
 
 class ServerException(Exception):
@@ -61,7 +67,10 @@ class HTTPWrapper:
             else:
                 status = 500
             # TODO: custom handlers
-            body = str(exc).encode('utf-8')
+            if self.server.env is Environment.DEV:
+                body = str(exc).encode('utf-8')
+            else:
+                body = 'internal server error'
             await self.send_simple_response(status, body, [('Content-Type', 'text/plain')])
         except Exception as e:
             HTTPWrapper.log.error('error whilst trying to send error response: {}', e)
@@ -105,10 +114,11 @@ class HTTPWrapper:
 
 
 class Server:
-    def __init__(self, router, max_recv=65536, timeout=10, identity=None):
+    def __init__(self, router, env=Environment.PROD, max_recv=65536, timeout=10, identity=None):
         if not identity:
             identity = 'responds/{} {}'.format(__version__, h11.PRODUCT_ID)
         self.router = router
+        self.env = env
         self.max_recv = max_recv
         self.timeout = timeout
         self.ident = identity
