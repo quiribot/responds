@@ -2,13 +2,12 @@
 # heavily inspired by h11's examples/curio-server.py
 # modified to suit a flask-like api
 
-from . import __version__
+from . import __version__, Response, Request
 from itertools import count
 from socket import SHUT_WR, SO_LINGER
 from wsgiref.handlers import format_date_time
 import curio
 import h11
-import inspect
 import logbook
 
 
@@ -32,7 +31,7 @@ class HTTPWrapper:
     async def send(self, event):
         if type(event) is h11.ConnectionClosed:
             # TODO
-            raise ServerException('cannot send ConnectionClosed, use close() instead')
+            raise ServerException('cannot send ConnectionClosed')
         data = self.conn.send(event)
         await self.sock.sendall(data)
 
@@ -122,24 +121,25 @@ class Server:
         ]
 
     # TODO: 405 Method not allowed based on route.methods
-    # TODO: Body streaming
     async def process_request(self, wrapper, event):
-        while True:
-            eof_event = await wrapper.next_event()
-            if type(eof_event) is h11.EndOfMessage:
-                break
-        route = self.router.match(event.target.decode('utf-8'))
+        route, params = self.router.match(event)
         if not route:
             return False
-        if inspect.iscoroutinefunction(route.handler):
-            res = await route.handler(event, route.params)
-        else:
-            res = route.handler(event, route.params)
-        if type(res) != tuple or len(res) != 2:
-            raise ServerException('expected a two-element tuple to be returned from the handler')
-        res, body = res
+        req = Request(
+            wrapper,
+            event.method,
+            params,
+            event.target,
+            event.headers,
+            event.http_version)
+        res = await route.call(req)
+        if type(res) is not Response:
+            raise Exception('expected handler return type to be Response')
+        if wrapper.conn.their_state is h11.SEND_BODY:
+            self.log.debug('handler didnt stream body')
+            await req.body()
         async with curio.timeout_after(self.timeout):
-            await wrapper.send_response(res, body)
+            await res.send(wrapper)
         return True
 
     async def tcp_handle(self, sock, addr):
@@ -170,11 +170,14 @@ class Server:
                 await wrapper.kill()
                 return
             else:
-                self.log.debug('our state is (supposedly) reusable: {}', wrapper.conn.our_state)
+                self.log.debug(
+                    'our state is (supposedly) reusable: {}',
+                    wrapper.conn.our_state)
                 try:
                     wrapper.conn.start_next_cycle()
                 except h11.ProtocolError as e:
-                    self.log.warn('couldnt start next cycle: protocolerror: {}', e)
+                    self.log.warn(
+                        'couldnt start next cycle: protocolerror: {}', e)
                     await wrapper.maybe_send_error_response(e)
                     # self.log.warn('ProtocolError for connection: {}', wrapper.id)
                     # self.log.warn(e)

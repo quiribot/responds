@@ -1,10 +1,12 @@
 import re
+from .route import Route
 from urllib.parse import urlparse
 
 
 PARAM_TEMPLATE_PATTERN = re.compile(r'<(.+[^\\])>')
 
 
+# TODO: Multi wildcard matching
 def compile_pattern(url, param_pattern='([^/]*)', strict=False):
     if url == '/':
         return re.compile('^\\/')
@@ -36,44 +38,27 @@ def compile_pattern(url, param_pattern='([^/]*)', strict=False):
     return re.compile(pattern), params
 
 
-class Params:
-    def __init__(self, groups, params):
-        # TODO: Edge case where len(groups) > len(params) or otherwise
-        self._params = dict(zip(params, groups))
-
-    def __getattr__(self, attr):
-        try:
-            return self._params[attr]
-        except KeyError as e:
-            raise AttributeError() from e
-
-
-class Route:
-    def __init__(self, handler, methods, params):
-        self.handler = handler
-        self.methods = methods
-        self.params = params
-
-
 class Router:
     def __init__(self):
         self.routes = []
 
-    def route(self, template, methods=None):
+    def route(self, *templates, methods=None):
         if not methods:
             methods = ['GET']
 
         def wrapper(func):
-            self.routes.append(compile_pattern(template) + (func, methods))
+            route = Route(func)
+            for template in templates:
+                route.add_path(*compile_pattern(template), methods=methods)
+            self.routes.append(route)
             return func
 
         return wrapper
 
-    def match(self, path, req_arg=None, res_arg=None):
-        for exp, params, handler, methods in self.routes:
-            match = exp.match(path)
-            if not match:
-                continue
-            return Route(handler, methods, Params(match.groups(), params))
+    def match(self, req_event):
+        for route in self.routes:
+            params = route.match(req_event)
+            if params:
+                return route, params
 
-        return None
+        return None, None
