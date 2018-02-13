@@ -1,26 +1,35 @@
 import logbook
 import sys
-import curio
-from responds import Response
-from responds.server import Server
+from responds.app import Application
 from responds.router import Router
 
-log = logbook.Logger('app')
+log = logbook.Logger('test.py')
 logbook.StreamHandler(sys.stdout).push_application()
 
 r = Router()
-s = Server(r)
+s = Application('app', r)
+
+
+class UserException(Exception):
+    pass
+
+
+@r.exception_handler(UserException)
+async def handle_exception(*args):
+    log.info('got args')
+    log.info(args)
+    return b'woops', 500, []
+
+
+@r.route('/hello/raise')
+async def handle_raise(event):
+    raise UserException()
 
 
 @r.route('/hello/async')
-async def handle(event):
-    log.info('our state: {}', event.wrapper.conn.our_state)
-    log.info('their state: {}', event.wrapper.conn.their_state)
-    log.info('app got body: {}', await event.body())
-    log.info('our state: {}', event.wrapper.conn.our_state)
-    log.info('their state: {}', event.wrapper.conn.their_state)
-    return Response(status_code=200, headers=[], body=b'Hello world!')
+async def handle_hello(ctx, params):
+    log.info('app got body: {}', await ctx.request.body())
+    return b'hello world\n', 200, []
 
 
-kernel = curio.Kernel()
-kernel.run(curio.tcp_server('0.0.0.0', 8080, s.tcp_handle))
+s.run('0.0.0.0', 8080)

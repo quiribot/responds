@@ -1,8 +1,14 @@
-import inspect
+import typing
+
+from .handler import Handler
+from .errors import MethodNotAllowed, RequestRedirect
+from .policy import RoutingPolicy
+
+# from .wrapper import Request
 
 
 class Params:
-    def __init__(self, groups, params):
+    def __init__(self, params, groups):
         # TODO: Edge case where len(groups) > len(params) or otherwise
         self._params = dict(zip(params, groups))
 
@@ -13,37 +19,33 @@ class Params:
             raise AttributeError() from e
 
 
-class Route(object):
-    def __init__(self, fun):
-        if not callable(fun):
-            raise Exception('fun should be a callable')
+class Route(Handler):
+    """
+    Holds the route handler, allowed methods
+    and the like.
+    """
 
-        self.fun = fun
-        self.paths = []
+    def __init__(
+            self,
+            pattern: typing.Pattern,
+            params: list,
+            func: typing.Callable,
+            parent,  # .router.Router
+            methods: list,
+            routing_policy=None):
+        super().__init__(func)
+        self.pattern = pattern
+        self.params = params
+        self.parent = parent
+        self.methods = methods
+        self.policy = routing_policy or parent.policy
 
-    def add_path(self, pattern, params, methods=None):
-        if not methods:
-            methods = ['GET']
-        methods = [method.encode('ascii') for method in methods]
-
-        self.paths.append((pattern, params, methods))
-
-    def match(self, req_event):
-        # NOTE: We could optimize this further by only matching
-        # a single method at a time (no `not in` call), but
-        # that'd require matching multiple patterns that are
-        # (likely) the same
-        for pattern, params, methods in self.paths:
-            matches = pattern.match(req_event.target.decode('utf-8'))
-            if not matches:
-                continue
-            if req_event.method not in methods:
-                continue
-            return Params(matches.groups(), params)
-        return None
-
-    async def call(self, *args, **kwargs):
-        res = self.fun(*args, **kwargs)
-        if inspect.isawaitable(res):
-            res = await res
-        return res
+    def match(self, target: str, method: str):
+        if method not in self.methods:
+            raise MethodNotAllowed()
+        matches = self.pattern.match(target)
+        if not matches:
+            return None
+        if self.policy is RoutingPolicy.STRICT and not target.endswith('/'):
+            raise RequestRedirect()
+        return Params(self.params, matches.groups())
