@@ -1,106 +1,182 @@
+import typing
+
 import curio
 import h11
 import logbook
+from werkzeug.exceptions import (BadRequestKeyError, HTTPException,
+                                 InternalServerError, MethodNotAllowed,
+                                 RequestTimeout)
+from werkzeug.wrappers import Request
+from werkzeug.routing import RequestRedirect, NotFound
 
-from .wrapper import Request
-from .context import HTTPContext
-from .errors import (HTTPException, InternalServerError, MethodNotAllowed,
-                     NotFound, RequestRedirect, RequestTimeout)
-from .router import Router
+from .fakewsgi import to_wsgi_environment, unfuck_wsgi_response
+from .handler import Handler
+from .mapper import Mapper
+from .route import Route
+from .session import Session
+
+ADDRESS = '{}:{}'
 
 
 class Application(object):
-    def __init__(self,
-                 name: str,
-                 router: Router,
-                 max_recv: int = 2**16,
-                 timeout: int = 10):
-        self.name = name
-        self.router = router
-
+    def __init__(self, name: str):
         self.log = logbook.Logger(name)
+        self.mapper = Mapper(name)
+        self.listening_to = (None, None)
 
-    async def process_request(self, ctx: HTTPContext):
-        req = ctx.request
-        route, params = self.router.match(req)
-        res, body = await route.invoke(ctx, params)
-        await ctx.send_response(res, body)
+    def create_environ(self, session: Session,
+                       req: h11.Request = None) -> dict:
+        # if the request is None, it's a fake environment
+        # for an error handler
+        if req is None:
+            return to_wsgi_environment(
+                headers=[],
+                method='',
+                path='/',
+                server_name=self.listening_to[0],
+                server_port=str(self.listening_to[1]),
+                remote_addr=ADDRESS.format(*session.addr))
+        # TODO: I'm unsure if passing in the body
+        # is really necessary
+        return to_wsgi_environment(
+            headers=req.headers,
+            method=req.method.decode('ascii'),
+            path=req.target.decode('utf-8'),
+            server_name=self.listening_to[0],
+            server_port=str(self.listening_to[1]),
+            remote_addr=ADDRESS.format(*session.addr))
 
-    async def process_exception(self, ctx: HTTPContext, e: HTTPException):
-        handler = self.router.handler_for(e)
-        if handler:
-            res, body = await handler.invoke(ctx, e)
-        else:
+    async def handle_httpexception(self, session: Session,
+                                   e: HTTPException) -> (h11.Response, bytes):
+        handler = self.mapper.get_error_handler(e)
+        if not handler:
             self.log.warn('no handler for {}', type(e))
-            res = h11.Response(status_code=e.status_code, headers=[])
-            body = type(e).__name__.encode('utf-8')
-        await ctx.send_response(res, body)
+            return unfuck_wsgi_response(
+                e.get_response(session.environ), session.environ)
+        return await handler.invoke(session, e)
 
-    async def process_protocol_error(self, ctx: HTTPContext,
-                                     e: h11.ProtocolError):
-        handler = self.router.exception_handlers.get(type(e))
-        if handler:
-            res, body = await handler.invoke(ctx, e)
-        else:
-            self.log.warn('no handler for ProtocolError')
-            res = h11.Response(
-                status_code=e.error_status_hint, headers=[])  # TODO
-            body = e.args[0].encode('utf-8')
-        await ctx.send_response(res, body)
+    # TODO: we'll need to add Server, X-Powered-By and Date headers
+    async def on_request(self, session: Session,
+                         req: h11.Response) -> (h11.Response, bytes):
+        session.environ = self.create_environ(session, req)
+        session.request = Request(session.environ)
 
-    async def on_client(self, sock, addr: (str, int)):
+        try:
+            route, params = self.mapper.match(session.environ)
+        except NotFound as e:
+            self.log.debug('couldnt match for {}', req.target)
+            return await self.handle_httpexception(session, e)
+        except MethodNotAllowed as e:
+            self.log.debug('no valid method for {req.method} {req.path}',
+                           session.request)
+            return await self.handle_httpexception(session, e)
+        except RequestRedirect as e:
+            self.log.debug('redirecting (missing slash)')
+            return unfuck_wsgi_response(
+                e.get_response(session.environ), session.environ)
+
+        try:
+            # TODO: OPTIONS method
+            return await route.invoke(session, session.request)
+        except BadRequestKeyError as e:
+            self.log.debug('BadRequestKeyError?')
+            return await self.handle_httpexception(session, e)
+        except HTTPException as e:
+            return await self.handle_httpexception(session, e)
+        except Exception as e:
+            self.log.debug(
+                'handler raised exception, wrapping in InternalServerError',
+                exc_info=True)
+            http_e = InternalServerError()
+            http_e.__cause__ = e
+            return await self.handle_httpexception(session, http_e)
+
+    async def on_connection(self, sock, addr: (str, int)):
         self.log.info('got connection from {}:{}', *addr)
-        ctx = HTTPContext(sock, addr)
+        session = Session(sock, addr)
+
+        res, body = None, None
 
         while True:
-            assert ctx.conn.states == {
+            assert session.conn.states == {
                 h11.CLIENT: h11.IDLE,
                 h11.SERVER: h11.IDLE
             }
 
             try:
-                # TODO: custom timeouts
+                # TODO: timeout
                 async with curio.timeout_after(10):
                     self.log.debug('client loop waiting for event')
-                    event = await ctx.next_event()
+                    event = await session.next_event()
                     self.log.debug('client loop got event {}', event)
                 if type(event) is h11.Request:
-                    ctx.request = Request(ctx, event)
-                    await self.process_request(ctx)
+                    # TODO: we'll need to somehow pass
+                    # Data events to on_request
+                    res, body = await self.on_request(session, event)
             except curio.TaskTimeout as e:
-                http_e = RequestTimeout()
+                http_e = RequestTimeout(description='timed out on read')
                 http_e.__cause__ = e
-                await self.process_exception(ctx, http_e)
-            except (MethodNotAllowed, NotFound) as e:
-                await self.process_exception(ctx, e)
-            except RequestRedirect as e:
-                # await self.process_exception(e)
-                # TODO: 301: create a new path as the Location header
-                pass
-            except Exception as e:
-                http_e = InternalServerError()
-                http_e.__cause__ = e
-                await self.process_exception(ctx, http_e)
+                session.environ = self.create_environ(session)
+                res, body = await self.handle_httpexception(session, http_e)
+            except Exception:
+                # something bad happened
+                # because we catch handler exceptions
+                # in on_request
+                self.log.error('uncaught exception while processing the request', exc_info=True)
 
-            if ctx.conn.their_state is h11.SEND_BODY:
+            # FIXME: refactor NO GOOOOOOOOOOD
+            if res:
+                await session.send_response(res, body)
+                res, body = None, None
+
+            if session.conn.their_state is h11.SEND_BODY:
                 # next_event til EndOfMessage
-                async for part in ctx.request.stream():
+                async for part in session.stream():
                     pass
 
-            if ctx.conn.our_state is h11.MUST_CLOSE:
+            if session.conn.our_state is h11.MUST_CLOSE:
                 self.log.debug('not reusable, shutting down')
-                await ctx.shutdown()
+                await session.shutdown()
                 return
             else:
                 try:
                     self.log.debug('trying to re-use connection')
-                    ctx.request = None
-                    ctx.conn.start_next_cycle()
+                    session.environ = None
+                    session.request = None
+                    session.conn.start_next_cycle()
                 except h11.ProtocolError as e:
                     self.log.error('unexpected state while trying '
-                                   'to start next cycle: {}', ctx.conn.states)
-                    await self.process_protocol_error(ctx, e)
+                                   'to start next cycle: {}',
+                                   session.conn.states)
+                    # TODO: await self.process_protocol_error(ctx, e)
+
+    def route(self,
+              route_url: str,
+              methods: typing.Sequence[str] = ('GET',),
+              strict_slashes: bool = False):
+        def __inner(func):
+            if not hasattr(func, '_route'):
+                route = Route(func)
+                setattr(func, '_route', route)
+                self.mapper.add_route(route)
+            func._route.add_path(route_url, methods, strict_slashes)
+            return func
+
+        return __inner
+
+    def error_handler(self, from_code: int, to_code: int = None):
+        def __inner(func):
+            handler = Handler(func)
+            self.mapper.add_error_handler(handler, from_code, to_code)
+            return func
+
+        return __inner
+
+    def build(self, *args, **kwargs):
+        return self.mapper.build(*args, **kwargs)
 
     def run(self, host: str, port: int):
-        kernel = curio.Kernel()
-        kernel.run(curio.tcp_server(host, port, self.on_client))
+        self.listening_to = (host, port)
+        if not self.mapper._built:
+            raise Exception('you need to call application.build() first')
+        curio.run(curio.tcp_server(host, port, self.on_connection))

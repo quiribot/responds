@@ -3,6 +3,8 @@ import typing
 
 import h11
 
+from .util import wrap_response
+
 
 class Handler(object):
     def __init__(self, func: typing.Callable):
@@ -14,8 +16,4 @@ class Handler(object):
         ret = self.func(*args, **kwargs)
         if inspect.isawaitable(ret):
             ret = await ret
-        try:
-            body, status_code, headers = ret
-            return h11.Response(status_code=status_code, headers=headers), body
-        except ValueError as e:
-            raise Exception('handlers must return a tuple of three') from e
+        return wrap_response(ret)

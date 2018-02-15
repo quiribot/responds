@@ -1,35 +1,34 @@
 import logbook
 import sys
 from responds.app import Application
-from responds.router import Router
 
 log = logbook.Logger('test.py')
 logbook.StreamHandler(sys.stdout).push_application()
 
-r = Router()
-s = Application('app', r)
+s = Application('app')
 
 
 class UserException(Exception):
     pass
 
 
-@r.exception_handler(UserException)
+@s.error_handler(500)
 async def handle_exception(*args):
     log.info('got args')
     log.info(args)
     return b'woops', 500, []
 
 
-@r.route('/hello/raise')
-async def handle_raise(event):
+@s.route('/hello/raise')
+async def handle_raise(session, params):
     raise UserException()
 
 
-@r.route('/hello/async')
-async def handle_hello(ctx, params):
-    log.info('app got body: {}', await ctx.request.body())
+@s.route('/hello/async')
+async def handle_hello(session, params):
+    log.info('handle_hello')
     return b'hello world\n', 200, []
 
 
+s.build()
 s.run('0.0.0.0', 8080)

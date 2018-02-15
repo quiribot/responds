@@ -1,51 +1,32 @@
 import typing
 
+from werkzeug.routing import Rule
+
 from .handler import Handler
-from .errors import MethodNotAllowed, RequestRedirect
-from .policy import RoutingPolicy
-
-# from .wrapper import Request
-
-
-class Params:
-    def __init__(self, params, groups):
-        # TODO: Edge case where len(groups) > len(params) or otherwise
-        self._params = dict(zip(params, groups))
-
-    def __getattr__(self, attr):
-        try:
-            return self._params[attr]
-        except KeyError as e:
-            raise AttributeError() from e
+from .util import lazyprop
 
 
 class Route(Handler):
-    """
-    Holds the route handler, allowed methods
-    and the like.
-    """
-
-    def __init__(
-            self,
-            pattern: typing.Pattern,
-            params: list,
-            func: typing.Callable,
-            parent,  # .router.Router
-            methods: list,
-            routing_policy=None):
+    def __init__(self, func: typing.Callable):
         super().__init__(func)
-        self.pattern = pattern
-        self.params = params
-        self.parent = parent
-        self.methods = methods
-        self.policy = routing_policy or parent.policy
+        self.paths = []
+        self.mapper = None
 
-    def match(self, target: str, method: str):
-        if method not in self.methods:
-            raise MethodNotAllowed()
-        matches = self.pattern.match(target)
-        if not matches:
-            return None
-        if self.policy is RoutingPolicy.STRICT and not target.endswith('/'):
-            raise RequestRedirect()
-        return Params(self.params, matches.groups())
+    @lazyprop
+    def endpoint(self):
+        return "_{}_{}".format(self.mapper.name, self.func.__name__)
+
+    def add_path(self, route_url: str, methods: typing.Sequence[str],
+                 strict_slashes: bool):
+        self.paths.append((route_url, methods, strict_slashes))
+
+    def get_rules(self):
+        rules = []
+        for route_url, methods, strict_slashes in self.paths:
+            rules.append(
+                Rule(
+                    route_url,
+                    methods=methods,
+                    endpoint=self.endpoint,
+                    strict_slashes=strict_slashes))
+        return rules

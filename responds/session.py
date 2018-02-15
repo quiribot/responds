@@ -1,12 +1,27 @@
-import h11
-import curio
 from socket import SHUT_WR, SO_LINGER
 
+import curio
+import h11
 
-class HTTPContext(object):
+
+class SessionBodyIterator(object):
+    def __init__(self, session):
+        self.session = session
+
+    async def __aiter__(self):
+        return self
+
+    async def __anext__(self):
+        event = await self.session.next_event()
+        if type(event) is h11.EndOfMessage:
+            raise StopAsyncIteration()
+        return event.data
+
+
+class Session(object):
     def __init__(self,
-                 sock,  # curio.Socket
-                 addr: str,
+                 sock,
+                 addr: (str, int),
                  max_recv: int = 2**16,
                  timeout: int = 10):
         self.sock = sock
@@ -16,7 +31,11 @@ class HTTPContext(object):
 
         self.conn = h11.Connection(h11.SERVER)
 
+        self.environ = None
         self.request = None
+
+    def stream(self):
+        return SessionBodyIterator(self)
 
     async def send(self, event):
         assert type(event) is not h11.ConnectionClosed
@@ -24,7 +43,7 @@ class HTTPContext(object):
         # NOTE: Timeouts are handled by the application
         await self.sock.sendall(data)
 
-    async def send_response(self, res: h11.Response, body: bytes=None):
+    async def send_response(self, res: h11.Response, body: bytes = None):
         await self.send(res)
         if body:
             await self.send(h11.Data(data=body))
