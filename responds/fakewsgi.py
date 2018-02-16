@@ -31,7 +31,7 @@ class SaneWSGIWrapper(object):
         """
         status = status.split()
         self.status = int(status[0])
-        self.reason = status[1:]
+        self.reason = ' '.join(status[1:])
         self.headers = headers
 
     def unfuck_iterable(self, i: typing.Iterable):

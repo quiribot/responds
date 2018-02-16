@@ -19,8 +19,8 @@ ADDRESS = '{}:{}'
 
 
 class Application(object):
-    def __init__(self, name: str):
-        self.log = logbook.Logger(name)
+    def __init__(self, name: str, level: int = logbook.WARNING):
+        self.log = logbook.Logger(name, level=level)
         self.mapper = Mapper(name)
         self.listening_to = (None, None)
 
@@ -126,8 +126,14 @@ class Application(object):
 
             # FIXME: refactor NO GOOOOOOOOOOD
             if res:
-                await session.send_response(res, body)
-                res, body = None, None
+                try:
+                    await session.send_response(res, body)
+                    res, body = None, None
+                except BrokenPipeError:
+                    # aaaaaaaa
+                    self.log.error('io error: broken pipe')
+                    await session.shutdown()
+                    return
 
             if session.conn.their_state is h11.SEND_BODY:
                 # next_event til EndOfMessage

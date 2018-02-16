@@ -43,6 +43,9 @@ def wrap_response(args) -> (h11.Response, bytes):
 
         raise TypeError("Cannot return more than 3 arguments from a view")
 
+    if type(args) in (str, bytes):
+        return h11.Response(status_code=200, headers=[]), get_body(args)
+
     raise TypeError("view returned invalid arguments")
 
 
