@@ -5,9 +5,7 @@ import typing
 from io import BytesIO
 from urllib.parse import urlsplit
 
-import h11
 from werkzeug.datastructures import MultiDict
-from werkzeug.wrappers import Response
 
 
 class SaneWSGIWrapper(object):
@@ -23,15 +21,13 @@ class SaneWSGIWrapper(object):
         self.reason = None
 
     def start_response(self,
-                       status,
+                       status: str,
                        headers: typing.List[tuple],
                        exc_info=None):
         """
         Used as the ``start_response`` callable when interacting with WSGI devices.
         """
-        status = status.split()
-        self.status = int(status[0])
-        self.reason = ' '.join(status[1:])
+        self.status = status
         self.headers = headers
 
     def unfuck_iterable(self, i: typing.Iterable):
@@ -52,9 +48,9 @@ def to_wsgi_environment(headers: list,
                         method: str,
                         path: str,
                         body: BytesIO = None,
-                        server_name: str = 'responds',
-                        server_port: str = '8080',
-                        remote_addr: str = '127.0.0.1:2000') -> MultiDict:
+                        server_name: str = "responds",
+                        server_port: str = "8080",
+                        remote_addr: str = "127.0.0.1:2000") -> MultiDict:
     if isinstance(headers, dict):
         headers = headers.items()
 
@@ -86,22 +82,12 @@ def to_wsgi_environment(headers: list,
     environ["wsgi.version"] = (1, 0)
 
     for header, value in headers:
-        name = (header if type(header) is str else header.decode('ascii')).upper().replace("-", "_")
+        name = (header if type(header) is str else header.decode(
+            "ascii")).upper().replace("-", "_")
         if header not in ("Content-Type", "Content-Length"):
             name = "HTTP_{}".format(name)
 
         environ.add(name, value
-                    if type(value) is str else value.decode('ascii'))
+                    if type(value) is str else value.decode("ascii"))
 
     return environ
-
-
-def unfuck_wsgi_response(response: Response,
-                         environ: dict) -> (h11.Response, bytes):
-    wrapper = SaneWSGIWrapper()
-    iterator = response(environ, wrapper.start_response)
-    wrapper.unfuck_iterable(iterator)
-    return h11.Response(
-        status_code=wrapper.status,
-        reason=wrapper.reason,
-        headers=wrapper.headers), wrapper.real_body
