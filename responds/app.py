@@ -47,7 +47,7 @@ class Application(object):
             return await self.handle_httpexception(environ, e)
         except MethodNotAllowed as e:
             self.log.debug("no valid method for {req.method} {req.path}",
-                           request)
+                           req=request)
             return await self.handle_httpexception(environ, e)
         except RequestRedirect as e:
             self.log.debug("redirecting (missing slash)")
