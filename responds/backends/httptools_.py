@@ -115,7 +115,7 @@ class HTTPToolsBackend(Backend):
         else:
             http_e = InternalServerError()
             http_e.__cause__ = e
-        environ = session.create_environ(True)
+        environ = session.create_environ(fake=True)
         res = await self.app.handle_httpexception(environ, http_e)
         self.add_common_headers(res)
         await sock.sendall(session.create_response(res, environ))
@@ -134,6 +134,10 @@ class HTTPToolsBackend(Backend):
                     return
                 session.parser.feed_data(data)
                 if session.message_complete:
+                    body_len = session.body.tell()
+                    if body_len:
+                        self.log.debug("got body of len {}", body_len)
+                        session.body.seek(0)
                     environ = session.create_environ()
                     res = await self.app.on_request(environ, Request(environ))
                     self.add_common_headers(res)
