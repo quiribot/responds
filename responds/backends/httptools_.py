@@ -35,7 +35,7 @@ class HTTPToolsSession(Session):
             return to_wsgi_environment(
                 headers=self.headers,
                 method=self.parser.get_method().decode("ascii"),
-                path=self.url.decode("utf-8"),  # TODO: use httptools.parse_url
+                path=self.url.decode("utf-8"),
                 body=self.body,
                 server_name=ip,
                 server_port=str(port),
@@ -147,15 +147,16 @@ class HTTPToolsBackend(Backend):
                     await session.shutdown()
                     return
             except curio.TaskTimeout as e:
-                # TODO: handle edge case where client doesnt close
-                # on end
-                http_e = RequestTimeout(description="timed out on read")
-                http_e.__cause__ = e
-                fake_env = session.create_environ(True)
-                res = await self.app.handle_httpexception(fake_env, http_e)
-                self.add_common_headers(res)
-                data = session.create_response(res, fake_env)
-                await sock.sendall(data)
+                if session.message_complete:  # we already sent the response
+                    self.log.warn("timed out on read", exc_info=True)
+                else:
+                    http_e = RequestTimeout(description="timed out on read")
+                    http_e.__cause__ = e
+                    fake_env = session.create_environ(True)
+                    res = await self.app.handle_httpexception(fake_env, http_e)
+                    self.add_common_headers(res)
+                    data = session.create_response(res, fake_env)
+                    await sock.sendall(data)
                 await session.shutdown()
                 return
             except httptools.HttpParserError as e:
@@ -169,6 +170,5 @@ class HTTPToolsBackend(Backend):
             except Exception:
                 # something really bad happened
                 self.log.error(
-                    "uncaught exception, file an issue",
-                    exc_info=True)
+                    "uncaught exception, file an issue", exc_info=True)
                 return
