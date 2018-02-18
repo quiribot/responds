@@ -1,4 +1,5 @@
 import typing
+from collections import namedtuple
 
 import curio
 import logbook
@@ -12,6 +13,8 @@ from .backends import Backend
 from .handler import Handler
 from .mapper import Mapper
 from .route import Route
+
+Context = namedtuple("Context", ("request", "params", "environ"))
 
 
 class Application(object):
@@ -31,11 +34,10 @@ class Application(object):
             self.log.warn("no handler for {}", type(e))
             return e.get_response(environ)
         # FIXME: if the handler raises, it rolls up to the backend
-        return await handler.invoke(environ, e)  # TODO: a more sane api
+        return await handler.invoke(environ, e)
 
     # TODO: we'll need to add Server, X-Powered-By and Date headers
-    async def on_request(self, environ: MultiDict,
-                         req: Request) -> Response:
+    async def on_request(self, environ: MultiDict, req: Request) -> Response:
         request = Request(environ)
 
         try:
@@ -53,7 +55,8 @@ class Application(object):
 
         try:
             # TODO: OPTIONS method
-            return await route.invoke(request)  # TODO: a more sane api
+            return await route.invoke(
+                Context(request=req, params=params, environ=environ))
         except BadRequestKeyError as e:
             self.log.debug("BadRequestKeyError?")
             return await self.handle_httpexception(environ, e)

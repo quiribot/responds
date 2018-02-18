@@ -1,5 +1,8 @@
-import logbook
+import json
 import sys
+
+import logbook
+
 from responds.app import Application
 from responds.backends.httptools_ import HTTPToolsBackend
 
@@ -14,20 +17,29 @@ class UserException(Exception):
 
 
 @s.error_handler(500)
-async def handle_exception(*args):
-    log.info("got args")
-    log.info(args)
+async def handle_exception(environ, e):
     return b"woops", 500, []
 
 
 @s.route("/hello/raise")
-async def handle_raise(request):
+async def handle_raise(ctx):
     raise UserException()
 
 
 @s.route("/")
-async def handle_hello(request):
+async def handle_hello(ctx):
     return "hello world\n"
+
+
+@s.route("/dump/headers")
+async def handle_dump_headers(ctx):
+    headers = dict(ctx.request.headers)
+    return json.dumps(headers)
+
+
+@s.route("/dump/body", methods=("POST", ))
+async def handle_dump_body(ctx):
+    return ctx.request.get_data()
 
 
 s.build()

@@ -1,4 +1,5 @@
 from io import BytesIO
+from wsgiref.handlers import format_date_time
 
 import curio
 import httptools
@@ -8,7 +9,6 @@ from werkzeug.exceptions import (BadRequest, InternalServerError,
                                  MethodNotAllowed, RequestTimeout)
 from werkzeug.wrappers import Request, Response
 
-from wsgiref.handlers import format_date_time
 from . import Backend, Session
 from ..app import Application
 from ..fakewsgi import SaneWSGIWrapper, to_wsgi_environment

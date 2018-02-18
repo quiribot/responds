@@ -1,5 +1,6 @@
-from setuptools import setup
 from sys import version_info
+
+from setuptools import setup
 
 # We only use 3.5 features
 # but curio requires >= 3.6
