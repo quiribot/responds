@@ -14,6 +14,6 @@ setup(
     author='Aurieh',
     url='https://github.com/quiribot/responds',
     packages=['responds'],
-    install_requires=['h11', 'curio', 'werkzeug'],
+    install_requires=['httptools', 'curio', 'werkzeug'],
     classifiers=['Programming Language :: Python :: 3']
 )
