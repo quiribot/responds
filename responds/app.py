@@ -33,10 +33,13 @@ class Application(object):
         if not handler:
             self.log.warn("no handler for {}", type(e))
             return e.get_response(environ)
-        # FIXME: if the handler raises, it rolls up to the backend
-        return await handler.invoke(environ, e)
+        try:
+            return await handler.invoke(environ, e)
+        except Exception as e:  # fuck you, user
+            self.log.error("error handler raised an exception", exc_info=True)
+            http_e = InternalServerError(description="handler raised")
+            return http_e.get_response(environ)
 
-    # TODO: we'll need to add Server, X-Powered-By and Date headers
     async def on_request(self, environ: MultiDict, req: Request) -> Response:
         request = Request(environ)
 

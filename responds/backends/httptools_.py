@@ -27,7 +27,9 @@ class HTTPToolsSession(Session):
         self.headers = []
 
     def create_environ(self, fake: bool = False):
-        # TODO: Content-Encoding: zlib
+        # we don't process Content-Encoding
+        # https://en.wikipedia.org/wiki/Zip_bomb
+        # TODO: Maybe send a 400?
         ip, port = self.sock.getsockname()
         remote_addr = self.remote_ip + ":" + str(self.remote_port)
         if fake:
@@ -50,6 +52,7 @@ class HTTPToolsSession(Session):
             remote_addr=remote_addr)
 
     def create_response(self, response: Response, environ: MultiDict) -> bytes:
+        # TODO: Compress response based on Accept-Encoding
         wrapper = SaneWSGIWrapper()
         wrapper.unfuck_iterable(response(environ, wrapper.start_response))
         res = "HTTP/1.1 " + wrapper.status + "\r\n"
@@ -61,6 +64,7 @@ class HTTPToolsSession(Session):
         return res
 
     # httptools callbacks
+    # TODO: Might want to optimize constructors here
     def on_message_begin(self):
         self.message_complete = False
         self.body = BytesIO()
@@ -101,7 +105,7 @@ class HTTPToolsBackend(Backend):
     def add_common_headers(self, res: Response):
         res.headers["Server"] = b"responds-httptools"
         res.headers["X-Powered-By"] = b"responds"
-        res.headers["Date"] = format(None).encode("ascii")
+        res.headers["Date"] = format_date_time(None).encode("ascii")
 
     async def handle_parser_error(self, session: HTTPToolsSession,
                                   e: httptools.HttpParserError):
@@ -162,10 +166,7 @@ class HTTPToolsBackend(Backend):
             except httptools.HttpParserError as e:
                 return await self.handle_parser_error(session, e)
             except OSError:
-                self.log.error("os error", exc_info=True)
-                return
-            except BrokenPipeError:
-                self.log.error("io error: broken pipe", exc_info=True)
+                self.log.error("io error", exc_info=True)
                 return
             except Exception:
                 # something really bad happened

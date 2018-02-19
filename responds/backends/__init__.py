@@ -7,7 +7,9 @@ from werkzeug.datastructures import MultiDict
 from werkzeug.wrappers import Response, Request
 
 
+# TODO: Maybe allow custom values
 MAX_RECV = 2 ** 16
+TIMEOUT = 10
 
 
 class Session(abc.ABC):
@@ -41,9 +43,9 @@ class Session(abc.ABC):
                 # They're already gone, nothing to do
                 return
         try:
-            async with curio.timeout_after(10):  # TODO
+            async with curio.timeout_after(TIMEOUT):
                 while True:
-                    got = await self.sock.recv(MAX_RECV)  # TODO
+                    got = await self.sock.recv(MAX_RECV)
                     if not got:
                         break
         except curio.TaskTimeout:
