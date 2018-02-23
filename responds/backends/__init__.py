@@ -35,13 +35,7 @@ class Session(abc.ABC):
         """
 
     async def shutdown(self):
-        # Curio bug: doesn't expose shutdown()
-        with self.sock.blocking() as real_sock:
-            try:
-                real_sock.shutdown(SHUT_WR)
-            except OSError:
-                # They're already gone, nothing to do
-                return
+        await self.sock.shutdown(SHUT_WR)
         try:
             async with curio.timeout_after(TIMEOUT):
                 while True:
@@ -51,7 +45,7 @@ class Session(abc.ABC):
         except curio.TaskTimeout:
             with self.sock.blocking() as real_sock:
                 # force a reset when we call close in our finally block
-                real_sock.setopt(SO_LINGER, 0)
+                real_sock.setsockopt(SO_LINGER, 0)
         except ConnectionResetError:  # dead
             return
         finally:

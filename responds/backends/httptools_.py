@@ -151,9 +151,7 @@ class HTTPToolsBackend(Backend):
                     await session.shutdown()
                     return
             except curio.TaskTimeout as e:
-                if session.message_complete:  # we already sent the response
-                    self.log.warn("timed out on read", exc_info=True)
-                else:
+                if not session.message_complete:
                     http_e = RequestTimeout(description="timed out on read")
                     http_e.__cause__ = e
                     fake_env = session.create_environ(True)
@@ -161,6 +159,16 @@ class HTTPToolsBackend(Backend):
                     self.add_common_headers(res)
                     data = session.create_response(res, fake_env)
                     await sock.sendall(data)
+                elif not session.parser.should_keep_alive():
+                    # we already sent a response
+                    self.log.warn("timed out on read", exc_info=True)
+                else:
+                    # TODO: review
+                    # we've reached a keep-alive timeout
+                    # there's no point in doing anything
+                    # lets just log something & shutdown
+                    self.log.debug(
+                        "timed out on read while serving keep-alive")
                 await session.shutdown()
                 return
             except httptools.HttpParserError as e:
