@@ -14,7 +14,7 @@ setup(
     license='LGPL',
     author='Aurieh',
     url='https://github.com/quiribot/responds',
-    packages=['responds'],
+    packages=['responds', 'responds.backends'],
     install_requires=['httptools', 'curio', 'werkzeug'],
     classifiers=['Programming Language :: Python :: 3']
 )
