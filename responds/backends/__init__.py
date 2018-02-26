@@ -1,6 +1,6 @@
 import abc
 import typing
-from socket import SHUT_WR, SO_LINGER
+from socket import SHUT_WR, SO_LINGER, SOL_SOCKET
 
 import curio
 from werkzeug.datastructures import MultiDict
@@ -45,7 +45,7 @@ class Session(abc.ABC):
         except curio.TaskTimeout:
             with self.sock.blocking() as real_sock:
                 # force a reset when we call close in our finally block
-                real_sock.setsockopt(SO_LINGER, 0)
+                real_sock.setsockopt(SOL_SOCKET, SO_LINGER, 0)
         except ConnectionResetError:  # dead
             return
         finally:
