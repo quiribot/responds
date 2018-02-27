@@ -1,15 +1,17 @@
 import abc
+import struct
 import typing
 from socket import SHUT_WR, SO_LINGER, SOL_SOCKET
 
 import curio
 from werkzeug.datastructures import MultiDict
-from werkzeug.wrappers import Response, Request
-
+from werkzeug.wrappers import Request, Response
 
 # TODO: Maybe allow custom values
-MAX_RECV = 2 ** 16
+MAX_RECV = 2**16
 TIMEOUT = 10
+
+NO_LINGER = struct.pack("ii", 1, 0)
 
 
 class Session(abc.ABC):
@@ -45,7 +47,7 @@ class Session(abc.ABC):
         except curio.TaskTimeout:
             with self.sock.blocking() as real_sock:
                 # force a reset when we call close in our finally block
-                real_sock.setsockopt(SOL_SOCKET, SO_LINGER, 0)
+                real_sock.setsockopt(SOL_SOCKET, SO_LINGER, NO_LINGER)
         except ConnectionResetError:  # dead
             return
         finally:
