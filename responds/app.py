@@ -27,6 +27,10 @@ class Application(object):
         self.mapper = Mapper(name)
         self.listening_to = (None, None)
 
+    @property
+    def root(self):
+        return self.mapper
+
     async def handle_httpexception(self, environ: MultiDict,
                                    e: HTTPException) -> Response:
         handler = self.mapper.get_error_handler(e)
@@ -72,6 +76,10 @@ class Application(object):
             http_e = InternalServerError()
             http_e.__cause__ = e
             return await self.handle_httpexception(environ, http_e)
+
+    def add_group(self, group: 'Group'):
+        mapper = group.inherit_from(self.root)
+        self.root.children.append(mapper)
 
     def route(self,
               route_url: str,

@@ -5,6 +5,7 @@ import logbook
 
 from responds.app import Application
 from responds.backends.httptools_ import HTTPToolsBackend
+from test_group import TestGroup
 
 log = logbook.Logger("test.py")
 logbook.StreamHandler(sys.stdout).push_application()
@@ -41,6 +42,8 @@ async def handle_dump_headers(ctx):
 async def handle_dump_body(ctx):
     return ctx.request.get_data()
 
+
+s.add_group(TestGroup())
 
 s.build()
 s.run('0.0.0.0', 8080)

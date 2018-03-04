@@ -1,6 +1,6 @@
 import typing
 
-from werkzeug.routing import Rule
+from werkzeug.routing import Rule, Submount
 
 from .handler import Handler
 from .util import lazyprop
@@ -20,7 +20,8 @@ class Route(Handler):
                  strict_slashes: bool):
         self.paths.append((route_url, methods, strict_slashes))
 
-    def get_rules(self):
+    @property
+    def submount(self):
         rules = []
         for route_url, methods, strict_slashes in self.paths:
             rules.append(
@@ -29,4 +30,4 @@ class Route(Handler):
                     methods=methods,
                     endpoint=self.endpoint,
                     strict_slashes=strict_slashes))
-        return rules
+        return Submount("", rules)
