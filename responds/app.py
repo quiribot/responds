@@ -45,8 +45,6 @@ class Application(object):
             return http_e.get_response(environ)
 
     async def on_request(self, environ: MultiDict, req: Request) -> Response:
-        request = Request(environ)
-
         try:
             route, params = self.mapper.match(environ)
         except NotFound as e:
@@ -54,7 +52,7 @@ class Application(object):
             return await self.handle_httpexception(environ, e)
         except MethodNotAllowed as e:
             self.log.debug("no valid method for {req.method} {req.path}",
-                           req=request)
+                           req=req)
             return await self.handle_httpexception(environ, e)
         except RequestRedirect as e:
             self.log.debug("redirecting (missing slash)")
