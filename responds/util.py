@@ -1,7 +1,17 @@
+from json import dumps
+
 from werkzeug.wrappers import Response
 
 # Stolen from Kyoukai
 # https://github.com/SunDwarf/Kyoukai/blob/master/kyoukai/util.py
+
+_JSON_HEADER = [("Content-Type", "application/json")]
+
+
+def json(obj, status=200, headers=None, *args, **kwargs):
+    headers = headers or []
+    headers = headers + _JSON_HEADER
+    return dumps(obj, *args, **kwargs), status, headers
 
 
 def wrap_response(args) -> Response:
@@ -46,4 +56,5 @@ def lazyprop(fn):
         if not hasattr(self, attr_name):
             setattr(self, attr_name, fn(self))
         return getattr(self, attr_name)
+
     return _lazyprop
