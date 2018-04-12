@@ -4,8 +4,8 @@ from collections import namedtuple
 import curio
 import logbook
 from werkzeug.datastructures import MultiDict
-from werkzeug.exceptions import (BadRequestKeyError, HTTPException,
-                                 InternalServerError, MethodNotAllowed)
+from werkzeug.exceptions import (HTTPException, InternalServerError,
+                                 MethodNotAllowed)
 from werkzeug.routing import NotFound, RequestRedirect
 from werkzeug.wrappers import Request, Response
 
@@ -35,7 +35,7 @@ class Application(object):
                                    e: HTTPException) -> Response:
         handler = self.mapper.get_error_handler(e)
         if not handler:
-            self.log.warn("no handler for {}", type(e))
+            self.log.error("no matching error handler for", exc_info=True)
             return e.get_response(environ)
         try:
             return await handler.invoke(environ, e)
@@ -51,8 +51,8 @@ class Application(object):
             self.log.debug("couldnt match for {}", req.path)
             return await self.handle_httpexception(environ, e)
         except MethodNotAllowed as e:
-            self.log.debug("no valid method for {req.method} {req.path}",
-                           req=req)
+            self.log.debug(
+                "no valid method for {req.method} {req.path}", req=req)
             return await self.handle_httpexception(environ, e)
         except RequestRedirect as e:
             self.log.debug("redirecting (missing slash)")
@@ -62,14 +62,12 @@ class Application(object):
             # TODO: OPTIONS method
             return await route.invoke(
                 Context(request=req, params=params, environ=environ))
-        except BadRequestKeyError as e:
-            self.log.debug("BadRequestKeyError?")
-            return await self.handle_httpexception(environ, e)
         except HTTPException as e:
             return await self.handle_httpexception(environ, e)
         except Exception as e:
             self.log.debug(
-                "handler raised exception, wrapping in InternalServerError",
+                "handler raised {}, wrapping in InternalServerError",
+                e,
                 exc_info=True)
             http_e = InternalServerError()
             http_e.__cause__ = e
