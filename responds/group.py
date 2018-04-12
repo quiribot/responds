@@ -13,6 +13,7 @@ def route(route_rule: str,
             setattr(func, "_route", Route(func))
         func._route.add_path(route_rule, methods, strict_slashes)
         return func
+
     return __inner
 
 
@@ -20,6 +21,7 @@ def error_handler(from_code: int, to_code: int = None):
     def __inner(func):
         setattr(func, "_from_to", (from_code, to_code))
         return func
+
     return __inner
 
 
@@ -38,7 +40,8 @@ class Group(object):
         methods = inspect.getmembers(self, predicate=inspect.ismethod)
         for _, method in methods:
             if hasattr(method, "_route"):
-                method._route.func = getattr(self, method._route.func.__name__)
+                method._route.func = method._route.func.__get__(
+                    self, self.__class__)
                 mapper.add_route(method._route)
             elif hasattr(method, "_from_to"):
                 (from_code, to_code) = method._from_to
