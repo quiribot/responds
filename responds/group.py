@@ -38,6 +38,7 @@ class Group(object):
         methods = inspect.getmembers(self, predicate=inspect.ismethod)
         for _, method in methods:
             if hasattr(method, "_route"):
+                method._route.func = getattr(self, method._route.func.__name__)
                 mapper.add_route(method._route)
             elif hasattr(method, "_from_to"):
                 (from_code, to_code) = method._from_to
